@@ -20,6 +20,8 @@ defmodule MyXQL.TypesTest do
   end
 
   describe "end-to-end" do
+    @moduletag :skip
+
     setup [:connect]
 
     test "MYSQL_TYPE_TINY", c do
@@ -122,7 +124,7 @@ defmodule MyXQL.TypesTest do
       timeout: 5000
     ]
 
-    {:ok, conn} = MyXQL.connect(opts)
+    {:ok, conn} = MyXQL.start_link(opts)
     {:ok, conn: conn}
   end
 

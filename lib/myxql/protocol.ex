@@ -1,7 +1,10 @@
 defmodule MyXQL.Protocol do
   @moduledoc false
+  use DBConnection
   import MyXQL.Messages
+  alias MyXQL.{Error, Query, Result}
 
+  @impl true
   def connect(opts) do
     hostname = Keyword.fetch!(opts, :hostname)
     port = Keyword.fetch!(opts, :port)
@@ -21,10 +24,7 @@ defmodule MyXQL.Protocol do
     end
   end
 
-  def disconnect(conn) do
-    :gen_tcp.close(conn.sock)
-  end
-
+  # TODO: wip
   def query(conn, statement) do
     data = encode_com_query(statement)
     :ok = :gen_tcp.send(conn.sock, data)
@@ -43,37 +43,93 @@ defmodule MyXQL.Protocol do
     end
   end
 
-  def prepare(conn, statement) do
-    data = encode_com_stmt_prepare(statement)
-    :ok = :gen_tcp.send(conn.sock, data)
-    {:ok, data} = :gen_tcp.recv(conn.sock, 0)
+  @impl true
+  def disconnect(_, _), do: raise "not implemented yet"
+
+  @impl true
+  def checkout(state) do
+    {:ok, state}
+  end
+
+  @impl true
+  def checkin(state) do
+    {:ok, state}
+  end
+
+  @impl true
+  def handle_prepare(%Query{} = query, _opts, state) do
+    data = encode_com_stmt_prepare(query.statement)
+    :ok = :gen_tcp.send(state.sock, data)
+    {:ok, data} = :gen_tcp.recv(state.sock, 0)
 
     case decode_com_stmt_prepare_response(data) do
       com_stmt_prepare_ok(statement_id: statement_id) ->
-        {:ok, statement_id}
+        {:ok, %{query | statement_id: statement_id}, state}
 
-      err_packet(error_message: message) ->
-        {:error, %MyXQL.Error{message: message}}
+      err_packet(error_message: error_message) ->
+        exception = %Error{message: error_message, query: query}
+        {:error, exception, state}
     end
   end
 
-  def execute(conn, statement, parameters) do
-    data = encode_com_stmt_execute(statement, parameters)
-    :ok = :gen_tcp.send(conn.sock, data)
-    {:ok, data} = :gen_tcp.recv(conn.sock, 0)
+  @impl true
+  def handle_execute(%Query{} = query, params, _opts, state) do
+    data = encode_com_stmt_execute(query.statement_id, params)
+    :ok = :gen_tcp.send(state.sock, data)
+    {:ok, data} = :gen_tcp.recv(state.sock, 0)
 
     case decode_com_stmt_execute_response(data) do
-      ok_packet(last_insert_id: last_insert_id) ->
-        {:ok, %MyXQL.Result{last_insert_id: last_insert_id}}
-
       resultset(column_definitions: column_definitions, rows: rows) ->
         columns = Enum.map(column_definitions, &elem(&1, 1))
-        {:ok, %MyXQL.Result{columns: columns, rows: rows}}
+        result = %Result{columns: columns, num_rows: length(rows), rows: rows}
+        {:ok, query, result, state}
 
-      err_packet(error_message: message) ->
-        {:error, %MyXQL.Error{message: message}}
+      ok_packet(status_flags: _status_flags, affected_rows: affected_rows, last_insert_id: last_insert_id) ->
+        result = %Result{columns: [], rows: [], num_rows: affected_rows, last_insert_id: last_insert_id}
+        {:ok, query, result, state}
+
+      err_packet(error_message: error_message) ->
+        exception = %Error{message: error_message, query: query}
+        {:error, exception, state}
     end
   end
+
+  @impl true
+  def handle_close(_query, _opts, state) do
+    # TODO: https://dev.mysql.com/doc/internals/en/com-stmt-close.html
+    # TODO: return %MyXQL.Result{}
+    result = nil
+    {:ok, result, state}
+  end
+
+  @impl true
+  def ping(state) do
+    # TODO: https://dev.mysql.com/doc/internals/en/com-ping.html
+    {:ok, state}
+  end
+
+  @impl true
+  def handle_begin(_, _), do: raise "not implemented yet"
+
+  @impl true
+  def handle_commit(_, _), do: raise "not implemented yet"
+
+  @impl true
+  def handle_rollback(_, _), do: raise "not implemented yet"
+
+  @impl true
+  def handle_status(_, _), do: raise "not implemented yet"
+
+  @impl true
+  def handle_declare(_, _, _, _), do: raise "not implemented yet"
+
+  @impl true
+  def handle_fetch(_, _, _, _), do: raise "not implemented yet"
+
+  @impl true
+  def handle_deallocate(_, _, _, _), do: raise "not implemented yet"
+
+  ## Internals
 
   defp handshake(sock, username, password, database) do
     {:ok, data} = :gen_tcp.recv(sock, 0)

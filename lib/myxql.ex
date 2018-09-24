@@ -1,24 +1,47 @@
 defmodule MyXQL do
-  def connect(opts) do
-    MyXQL.Protocol.connect(opts)
+  def start_link(opts) do
+    DBConnection.start_link(MyXQL.Protocol, opts)
   end
 
-  def query(conn, statement) do
-    MyXQL.Protocol.query(conn, statement)
+  def query(conn, statement, params \\ [], opts \\ []) do
+    case prepare_execute(conn, "", statement, params, opts) do
+      {:ok, _query, result} ->
+        {:ok, result}
+
+      {:error, exception} ->
+        {:error, exception}
+    end
   end
 
-  def query!(conn, statement) do
-    case query(conn, statement) do
+  def query!(conn, statement, params \\ [], opts \\ []) do
+    case query(conn, statement, params, opts) do
       {:ok, result} -> result
       {:error, exception} -> raise exception
     end
   end
 
-  def prepare(conn, statement) do
-    MyXQL.Protocol.prepare(conn, statement)
+  # TODO: handle query names
+  def prepare(conn, _name, statement, opts \\ []) do
+    query = %MyXQL.Query{statement: statement}
+    DBConnection.prepare(conn, query, opts)
   end
 
-  def execute(conn, statement_id, params \\ []) do
-    MyXQL.Protocol.execute(conn, statement_id, params)
+  # TODO: handle query names
+  def prepare_execute(conn, _name, statement, params \\ [], opts \\ []) do
+    query = %MyXQL.Query{statement: statement}
+
+    case DBConnection.prepare_execute(conn, query, params, opts) do
+      {:ok, query, result} ->
+        {:ok, query, result}
+
+      {:error, exception} ->
+        {:error, exception}
+    end
+  end
+
+  defdelegate execute(conn, query, params \\ [], opts \\ []), to: DBConnection
+
+  def child_spec(opts) do
+    DBConnection.child_spec(MyXQL.Protocol, opts)
   end
 end

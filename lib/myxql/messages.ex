@@ -281,7 +281,7 @@ defmodule MyXQL.Messages do
   end
 
   # https://dev.mysql.com/doc/internals/en/com-stmt-execute.html
-  def encode_com_stmt_execute(statement_id, parameters) do
+  def encode_com_stmt_execute(statement_id, params) do
     command = 0x17
 
     # CURSOR_TYPE_NO_CURSOR  0x00
@@ -297,7 +297,7 @@ defmodule MyXQL.Messages do
     null_bitmap = 0
 
     new_params_bound_flag = 1
-    {types, values} = parameters |> Enum.map(&T.encode_value/1) |> Enum.unzip()
+    {types, values} = params |> Enum.map(&T.encode_value/1) |> Enum.unzip()
 
     # TODO: find out and document why types are null-terminated
     types = for t <- types, do: <<t, 0>>, into: ""
