@@ -84,5 +84,21 @@ defmodule MyXQLTest do
 
       assert %MyXQL.Result{rows: [[0]]} = MyXQL.query!(conn, "SELECT COUNT(1) FROM integers3")
     end
+
+    test "status" do
+      {:ok, conn} = MyXQL.start_link(@opts)
+
+      MyXQL.query!(conn, "SELECT 1")
+      assert DBConnection.status(conn) == :idle
+
+      MyXQL.transaction(conn, fn conn ->
+        assert DBConnection.status(conn) == :transaction
+
+        # TODO: handle this too
+        # assert DBConnection.status(conn) == :error
+      end)
+
+      assert DBConnection.status(conn) == :idle
+    end
   end
 end

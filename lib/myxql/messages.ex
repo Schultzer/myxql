@@ -62,15 +62,15 @@ defmodule MyXQL.Messages do
   # TODO:
   # - handle lenenc integers for last_insert_id and last_insert_id
   # - investigate using CLIENT_SESSION_TRACK & SERVER_SESSION_STATE_CHANGED capabilities
-  defrecord :ok_packet, [:affected_rows, :last_insert_id, :status_flags, :warnings]
+  defrecord :ok_packet, [:affected_rows, :last_insert_id, :status_flags, :warning_count]
 
   def decode_ok_packet(data) do
     <<
       0,
-      affected_rows::size(8),
-      last_insert_id::size(8),
-      status_flags::size(16),
-      warnings::size(16),
+      affected_rows::little-8,
+      last_insert_id::little-8,
+      status_flags::little-16,
+      warning_count::little-16,
       _::binary
     >> = data
 
@@ -78,7 +78,7 @@ defmodule MyXQL.Messages do
       affected_rows: affected_rows,
       last_insert_id: last_insert_id,
       status_flags: status_flags,
-      warnings: warnings
+      warning_count: warning_count
     )
   end
 
@@ -228,7 +228,7 @@ defmodule MyXQL.Messages do
   # https://dev.mysql.com/doc/internals/en/binary-protocol-resultset.html
   #
   # both text & binary resultset have the same columns shape, but different rows
-  defrecord :resultset, [:column_count, :column_definitions, :rows]
+  defrecord :resultset, [:column_count, :column_definitions, :rows, :warning_count, :status_flags]
 
   # https://dev.mysql.com/doc/internals/en/com-query-response.html#packet-COM_QUERY_Response
   def decode_com_query_response(data) do
@@ -244,8 +244,8 @@ defmodule MyXQL.Messages do
       # TODO: column_count is lenenc_int, not just int
       <<column_count::size(8), rest::binary>> ->
         {column_definitions, rest} = decode_column_definitions(rest, column_count, [])
-        rows = decode_text_resultset_rows(rest, column_definitions, [])
-        resultset(column_count: column_count, column_definitions: column_definitions, rows: rows)
+        {rows, warning_count, status_flags} = decode_text_resultset_rows(rest, column_definitions, [])
+        resultset(column_count: column_count, column_definitions: column_definitions, rows: rows, warning_count: warning_count, status_flags: status_flags)
     end
   end
 
@@ -333,8 +333,8 @@ defmodule MyXQL.Messages do
       # TODO: column_count is lenenc_int, not int
       <<column_count::size(8), rest::binary>> ->
         {column_definitions, rest} = decode_column_definitions(rest, column_count, [])
-        rows = decode_binary_resultset_rows(rest, column_definitions, [])
-        resultset(column_count: column_count, column_definitions: column_definitions, rows: rows)
+        {rows, warning_count, status_flags} = decode_binary_resultset_rows(rest, column_definitions, [])
+        resultset(column_count: column_count, column_definitions: column_definitions, rows: rows, warning_count: warning_count, status_flags: status_flags)
     end
   end
 
@@ -384,8 +384,8 @@ defmodule MyXQL.Messages do
 
     case payload do
       # EOF packet
-      <<0xFE, _warning_count::size(16), _status_flags::size(16), 0::size(16)>> ->
-        Enum.reverse(acc)
+      <<0xFE, warning_count::little-16, status_flags::little-16, 0::size(16)>> ->
+        {Enum.reverse(acc), warning_count, status_flags}
 
       _ ->
         {row, rest} = decode_text_resultset_row(payload, column_definitions, [])
@@ -422,8 +422,8 @@ defmodule MyXQL.Messages do
   defp decode_binary_resultset_rows(data, column_definitions, acc) do
     case take_packet(data) do
       # EOF packet
-      {<<0xFE, _warning_count::size(16), _status_flags::size(16), 0::size(16)>>, ""} ->
-        Enum.reverse(acc)
+      {<<0xFE, warning_count::little-16, status_flags::little-16, 0::size(16)>>, ""} ->
+        {Enum.reverse(acc), warning_count, status_flags}
 
       {payload, rest} ->
         <<0, _null_bitmap, values::binary>> = payload
