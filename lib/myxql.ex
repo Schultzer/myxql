@@ -41,6 +41,10 @@ defmodule MyXQL do
 
   defdelegate execute(conn, query, params \\ [], opts \\ []), to: DBConnection
 
+  defdelegate transaction(conn, fun, opts \\ []), to: DBConnection
+
+  defdelegate rollback(conn, reason), to: DBConnection
+
   def child_spec(opts) do
     DBConnection.child_spec(MyXQL.Protocol, opts)
   end

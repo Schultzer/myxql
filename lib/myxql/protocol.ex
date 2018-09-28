@@ -109,13 +109,22 @@ defmodule MyXQL.Protocol do
   end
 
   @impl true
-  def handle_begin(_, _), do: raise "not implemented yet"
+  def handle_begin(opts, s) do
+    statement = "BEGIN"
+    handle_transaction(statement, opts, s)
+  end
 
   @impl true
-  def handle_commit(_, _), do: raise "not implemented yet"
+  def handle_commit(opts, s) do
+    statement = "COMMIT"
+    handle_transaction(statement, opts, s)
+  end
 
   @impl true
-  def handle_rollback(_, _), do: raise "not implemented yet"
+  def handle_rollback(opts, s) do
+    statement = "ROLLBACK"
+    handle_transaction(statement, opts, s)
+  end
 
   @impl true
   def handle_status(_, _), do: raise "not implemented yet"
@@ -159,5 +168,19 @@ defmodule MyXQL.Protocol do
       err_packet(error_message: message) ->
         {:error, %MyXQL.Error{message: message}}
     end
+  end
+
+  defp handle_transaction(statement, _opts, s) do
+    case send_text_query(s, statement) do
+      ok_packet() ->
+        {:ok, :foo, s}
+    end
+  end
+
+  defp send_text_query(s, statement) do
+    data = encode_com_query(statement)
+    :ok = :gen_tcp.send(s.sock, data)
+    {:ok, data} = :gen_tcp.recv(s.sock, 0)
+    decode_com_query_response(data)
   end
 end
