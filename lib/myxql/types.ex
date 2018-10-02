@@ -19,6 +19,16 @@ defmodule MyXQL.Types do
   def take_length_encoded_integer(<<0xFD, int::size(24), rest::binary>>), do: {int, rest}
   def take_length_encoded_integer(<<0xFE, int::size(64), rest::binary>>), do: {int, rest}
 
+  def encode_length_encode_integer(int) when int < 251, do: int
+  def encode_length_encoded_integer(int) when int < 0xFFFF, do: <<0xFC, int::little-signed-16>>
+  def encode_length_encoded_integer(int) when int < 0xFFFFFF, do: <<0xFD, int::little-signed-24>>
+  def encode_length_encoded_integer(int) when int < 0xFFFFFFFFFFFFFFFF, do: <<0xFE, int::little-signed-64>>
+
+  def encode_length_encode_string(binary) when is_binary(binary) do
+    size = encode_length_encoded_integer(byte_size(binary))
+    <<size::binary, binary::binary>>
+  end
+
   # https://dev.mysql.com/doc/internals/en/string.html
   def decode_length_encoded_string(binary) do
     {_size, rest} = take_length_encoded_integer(binary)
@@ -116,17 +126,119 @@ defmodule MyXQL.Types do
 
   # Binary values
 
-  def take_binary_value(data, @mysql_type_long) do
-    <<value::little-integer-size(32), rest::binary>> = data
+  def take_binary_value(<<value::little-signed-integer-size(8), rest::binary>>, @mysql_type_tiny) do
     {value, rest}
   end
 
-  def take_binary_value(data, @mysql_type_longlong) do
-    <<value::little-integer-size(64), rest::binary>> = data
+  def take_binary_value(<<value::little-signed-integer-size(16), rest::binary>>, type)
+      when type in [@mysql_type_short, @mysql_type_year] do
     {value, rest}
+  end
+
+  def take_binary_value(<<value::little-signed-integer-size(32), rest::binary>>, @mysql_type_long) do
+    {value, rest}
+  end
+
+  def take_binary_value(<<value::little-signed-integer-size(64), rest::binary>>, @mysql_type_longlong) do
+    {value, rest}
+  end
+
+  def take_binary_value(<<value::little-signed-integer-size(32), rest::binary>>, @mysql_type_int24) do
+    {value, rest}
+  end
+
+  def take_binary_value(<<value::little-signed-float-size(32), rest::binary>>, @mysql_type_float) do
+    {value, rest}
+  end
+
+  def take_binary_value(<<value::little-signed-float-size(64), rest::binary>>, @mysql_type_double) do
+    {value, rest}
+  end
+
+  def take_binary_value(data, @mysql_type_newdecimal) do
+    {string, rest} = take_length_encoded_string(data)
+    decimal = Decimal.new(string)
+    {decimal, rest}
+  end
+
+  def take_binary_value(<<4, year::little-signed-integer-size(16), month::8, day::8, rest::binary>>, @mysql_type_date) do
+    {:ok, date} = Date.new(year, month, day)
+    {date, rest}
+  end
+
+  # MySQL supports negative time and days, we don't.
+  # See: https://dev.mysql.com/doc/internals/en/binary-protocol-value.html#packet-ProtocolBinary::MYSQL_TYPE_TIME
+  def take_binary_value(<<8, 0::8, 0::32, hour::8, minute::8, second::8, rest::binary>>, @mysql_type_time) do
+    {:ok, time} = Time.new(hour, minute, second)
+    {time, rest}
+  end
+
+  def take_binary_value(<<12, 0::8, 0::32, hour::8, minute::8, second::8, microsecond::little-32, rest::binary>>, @mysql_type_time) do
+    {:ok, time} = Time.new(hour, minute, second, {microsecond, 6})
+    {time, rest}
+  end
+
+  def take_binary_value(<<0, rest::binary>>, @mysql_type_time) do
+    {~T[00:00:00], rest}
+  end
+
+  def take_binary_value(<<4, year::little-16, month::8, day::8, rest::binary>>, @mysql_type_datetime) do
+    {:ok, naive_datetime} = NaiveDateTime.new(year, month, day, 0, 0, 0)
+    {naive_datetime, rest}
+  end
+
+  def take_binary_value(<<7, year::little-16, month::8, day::8, hour::8, minute::8, second::8, rest::binary>>, @mysql_type_datetime) do
+    {:ok, naive_datetime} = NaiveDateTime.new(year, month, day, hour, minute, second)
+    {naive_datetime, rest}
+  end
+
+  def take_binary_value(<<11, year::little-16, month::8, day::8, hour::8, minute::8, second::8, microsecond::little-32, rest::binary>>, @mysql_type_datetime) do
+    {:ok, naive_datetime} = NaiveDateTime.new(year, month, day, hour, minute, second, {microsecond, 6})
+    {naive_datetime, rest}
+  end
+
+  def take_binary_value(data, type) when type in [@mysql_type_var_string, @mysql_type_string] do
+    take_length_encoded_string(data)
   end
 
   def encode_value(value) when is_integer(value) do
-    {0x08, <<value::little-integer-size(64)>>}
+    {@mysql_type_longlong, <<value::little-signed-integer-size(64)>>}
+  end
+
+  def encode_value(value) when is_float(value) do
+    {@mysql_type_float, <<value::little-signed-float-size(32)>>}
+  end
+
+  def encode_value(%Decimal{} = value) do
+    string = Decimal.to_string(value, :normal)
+    {@mysql_type_newdecimal, <<byte_size(string), string::binary>>}
+  end
+
+  def encode_value(%Date{year: year, month: month, day: day}) do
+    {@mysql_type_date, <<4, year::little-signed-integer-size(16), month::8, day::8>>}
+  end
+
+  def encode_value(%Time{hour: 0, minute: 0, second: 0, microsecond: {0, 0}}) do
+    {@mysql_type_time, <<0>>}
+  end
+
+  def encode_value(%Time{hour: hour, minute: minute, second: second, microsecond: {0, 0}}) do
+    {@mysql_type_time, <<8, 0::8, 0::32, hour::8, minute::8, second::8>>}
+  end
+
+  def encode_value(%Time{hour: hour, minute: minute, second: second, microsecond: {microsecond, _}}) do
+    {@mysql_type_time, <<12, 0::8, 0::32, hour::8, minute::8, second::8, microsecond::little-32>>}
+  end
+
+  def encode_value(%NaiveDateTime{year: year, month: month, day: day, hour: hour, minute: minute, second: second, microsecond: {0, 0}}) do
+    {@mysql_type_datetime, <<7, year::little-16, month::8, day::8, hour::8, minute::8, second::8>>}
+  end
+
+  def encode_value(%NaiveDateTime{year: year, month: month, day: day, hour: hour, minute: minute, second: second, microsecond: {microsecond, _}}) do
+    {@mysql_type_datetime, <<11, year::little-16, month::8, day::8, hour::8, minute::8, second::8, microsecond::little-32>>}
+  end
+
+  def encode_value(binary) when is_binary(binary) do
+    {@mysql_type_var_string, encode_length_encode_string(binary)}
   end
 end

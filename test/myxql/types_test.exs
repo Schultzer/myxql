@@ -20,8 +20,6 @@ defmodule MyXQL.TypesTest do
   end
 
   describe "end-to-end" do
-    @moduletag :skip
-
     setup [:connect]
 
     test "MYSQL_TYPE_TINY", c do
@@ -48,30 +46,35 @@ defmodule MyXQL.TypesTest do
     end
 
     test "MYSQL_TYPE_FLOAT", c do
-      assert_roundtrip(c, "my_float", -13.37)
-      assert_roundtrip(c, "my_float", 13.37)
+      # assert_roundtrip(c, "my_float", -13.37)
+
+      assert Float.round(insert_and_get(c, "my_float", -13.37), 2) == -13.37
+      assert Float.round(insert_and_get(c, "my_float", 13.37), 2) == 13.37
+
+      # assert_roundtrip(c, "my_float", 13.37)
     end
 
-    test "MYSQL_TYPE_DOUBLE", c do
-      assert_roundtrip(c, "my_double", -13.37)
-      assert_roundtrip(c, "my_double", 13.37)
-    end
+    # TODO:
+    # test "MYSQL_TYPE_DOUBLE", c do
+    #   assert_roundtrip(c, "my_double", -13.37)
+    #   assert_roundtrip(c, "my_double", 13.37)
+    # end
 
     test "MYSQL_TYPE_NEWDECIMAL - SQL DECIMAL", c do
       assert_roundtrip(c, "my_decimal", Decimal.new(-13))
-      assert insert_and_get(c, "my_decimal", "-13.37") == Decimal.new(-13)
+      assert insert_and_get(c, "my_decimal", Decimal.new("-13.37")) == Decimal.new(-13)
 
       assert_roundtrip(c, "my_decimal52", Decimal.new("-999.99"))
       assert_roundtrip(c, "my_decimal52", Decimal.new("999.99"))
     end
 
-    # TODO:
-    # test "MYSQL_TYPE_BIT" do
-    #   assert_roundtrip(c, "my_bit2", 1)
-    #   assert_roundtrip(c, "my_bit8", 1)
+    # test "MYSQL_TYPE_BIT", c do
+    #   assert_roundtrip(c, "my_bit2", <<1::2>>)
+    #   # assert_roundtrip(c, "my_bit8", 1)
     # end
 
     test "MYSQL_TYPE_DATE", c do
+      assert_roundtrip(c, "my_date", ~D[1999-12-31])
       assert_roundtrip(c, "my_date", ~D[1999-12-31])
     end
 
@@ -79,9 +82,12 @@ defmodule MyXQL.TypesTest do
       assert_roundtrip(c, "my_time", ~T[09:10:20])
       assert insert_and_get(c, "my_time", ~T[09:10:20.123]) == ~T[09:10:20]
 
-      assert_roundtrip(c, "my_time3", ~T[09:10:20.000])
-      assert_roundtrip(c, "my_time3", ~T[09:10:20.123])
-      assert insert_and_get(c, "my_time3", ~T[09:10:20]) == ~T[09:10:20.000]
+      assert_roundtrip(c, "my_time3", ~T[00:00:00])
+
+      # TODO:
+      # assert_roundtrip(c, "my_time3", ~T[09:10:20.000])
+      # assert_roundtrip(c, "my_time3", ~T[09:10:20.123])
+      # assert insert_and_get(c, "my_time3", ~T[09:10:20]) == ~T[09:10:20.000]
 
       assert_roundtrip(c, "my_time6", ~T[09:10:20.123456])
     end
@@ -92,11 +98,12 @@ defmodule MyXQL.TypesTest do
       assert insert_and_get(c, "my_datetime", ~N[1999-12-31 09:10:20.123]) ==
                ~N[1999-12-31 09:10:20]
 
-      assert_roundtrip(c, "my_datetime3", ~N[1999-12-31 09:10:20.000])
-      assert_roundtrip(c, "my_datetime3", ~N[1999-12-31 09:10:20.123])
+      # TODO:
+      # assert_roundtrip(c, "my_datetime3", ~N[1999-12-31 09:10:20.000])
+      # assert_roundtrip(c, "my_datetime3", ~N[1999-12-31 09:10:20.123])
 
-      assert insert_and_get(c, "my_datetime3", ~N[1999-12-31 09:10:20]) ==
-               ~N[1999-12-31 09:10:20.000]
+      # assert insert_and_get(c, "my_datetime3", ~N[1999-12-31 09:10:20]) ==
+      #          ~N[1999-12-31 09:10:20.000]
 
       assert_roundtrip(c, "my_datetime6", ~N[1999-12-31 09:10:20.123456])
     end
@@ -105,12 +112,12 @@ defmodule MyXQL.TypesTest do
       assert_roundtrip(c, "my_year", 1999)
     end
 
-    test "MYSQL_TYPE_STRING - SQL BINARY", c do
-      assert_roundtrip(c, "my_binary3", <<1, 2, 3>>)
-    end
-
     test "MYSQL_TYPE_VAR_STRING - SQL VARBINARY", c do
       assert_roundtrip(c, "my_varbinary3", <<1, 2, 3>>)
+    end
+
+    test "MYSQL_TYPE_STRING - SQL BINARY", c do
+      assert_roundtrip(c, "my_binary3", <<1, 2, 3>>)
     end
   end
 
@@ -139,14 +146,14 @@ defmodule MyXQL.TypesTest do
 
   defp insert(c, field, value) do
     %MyXQL.Result{last_insert_id: id} =
-      MyXQL.query!(c.conn, "INSERT INTO test_types (`#{field}`) VALUES ('#{value}')")
+      MyXQL.query!(c.conn, "INSERT INTO test_types (`#{field}`) VALUES (?)", [value])
 
     id
   end
 
   defp get(c, field, id) do
     %MyXQL.Result{rows: [[value]]} =
-      MyXQL.query!(c.conn, "SELECT `#{field}` FROM test_types WHERE id = '#{id}'")
+      MyXQL.query!(c.conn, "SELECT `#{field}` FROM test_types WHERE id = ?", [id])
 
     value
   end
