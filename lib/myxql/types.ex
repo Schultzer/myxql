@@ -67,7 +67,7 @@ defmodule MyXQL.Types do
   # @mysql_type_tiny_blob 0xF9
   # @mysql_type_medium_blob 0xFA
   # @mysql_type_long_blob 0xFB
-  # @mysql_type_blob 0xFC
+  @mysql_type_blob 0xFC
   @mysql_type_var_string 0xFD
   @mysql_type_string 0xFE
   # @mysql_type_geometry 0xFF
@@ -197,7 +197,7 @@ defmodule MyXQL.Types do
     {naive_datetime, rest}
   end
 
-  def take_binary_value(data, type) when type in [@mysql_type_var_string, @mysql_type_string] do
+  def take_binary_value(data, type) when type in [@mysql_type_var_string, @mysql_type_string, @mysql_type_blob] do
     take_length_encoded_string(data)
   end
 
@@ -240,5 +240,14 @@ defmodule MyXQL.Types do
 
   def encode_value(binary) when is_binary(binary) do
     {@mysql_type_var_string, encode_length_encode_string(binary)}
+  end
+
+  # boolean
+  def encode_value(true) do
+    {@mysql_type_tiny, <<1>>}
+  end
+
+  def encode_value(false) do
+    {@mysql_type_tiny, <<0>>}
   end
 end

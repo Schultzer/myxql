@@ -5,6 +5,12 @@ defmodule MyXQL.Protocol do
   import MyXQL.Messages
   alias MyXQL.{Error, Query, Result}
 
+  defstruct [
+    :sock,
+    :connection_id,
+    :transaction_status
+  ]
+
   @impl true
   def connect(opts) do
     hostname = Keyword.fetch!(opts, :hostname)
@@ -14,32 +20,14 @@ defmodule MyXQL.Protocol do
     database = Keyword.fetch!(opts, :database)
     timeout = Keyword.fetch!(opts, :timeout)
     socket_opts = [:binary, active: false]
+    skip_database? = Keyword.get(opts, :skip_database, false)
 
     case :gen_tcp.connect(String.to_charlist(hostname), port, socket_opts, timeout) do
       {:ok, sock} ->
-        handshake(sock, username, password, database)
+        handshake(sock, username, password, database, skip_database?)
 
       {:error, reason} ->
         message = reason |> :inet.format_error() |> List.to_string()
-        {:error, %MyXQL.Error{message: message}}
-    end
-  end
-
-  # TODO: wip
-  def query(conn, statement) do
-    data = encode_com_query(statement)
-    :ok = :gen_tcp.send(conn.sock, data)
-    {:ok, data} = :gen_tcp.recv(conn.sock, 0)
-
-    case decode_com_query_response(data) do
-      ok_packet(last_insert_id: last_insert_id) ->
-        {:ok, %MyXQL.Result{last_insert_id: last_insert_id}}
-
-      resultset(column_definitions: column_definitions, rows: rows) ->
-        columns = Enum.map(column_definitions, &elem(&1, 1))
-        {:ok, %MyXQL.Result{columns: columns, rows: rows}}
-
-      err_packet(error_message: message) ->
         {:error, %MyXQL.Error{message: message}}
     end
   end
@@ -58,23 +46,27 @@ defmodule MyXQL.Protocol do
   end
 
   @impl true
-  def handle_prepare(%Query{} = query, _opts, state) do
+  def handle_prepare(%Query{} = query, _opts, s) do
+    # IO.inspect {:prepare, query.name, query.statement, query.ref, s.connection_id}
+
     data = encode_com_stmt_prepare(query.statement)
-    :ok = :gen_tcp.send(state.sock, data)
-    {:ok, data} = :gen_tcp.recv(state.sock, 0)
+    :ok = :gen_tcp.send(s.sock, data)
+    {:ok, data} = :gen_tcp.recv(s.sock, 0)
 
     case decode_com_stmt_prepare_response(data) do
       com_stmt_prepare_ok(statement_id: statement_id) ->
-        {:ok, %{query | statement_id: statement_id}, state}
+        {:ok, %{query | statement_id: statement_id}, s}
 
       err_packet(error_message: error_message) ->
         exception = %Error{message: error_message, query: query}
-        {:error, exception, state}
+        {:error, exception, s}
     end
   end
 
   @impl true
   def handle_execute(%Query{} = query, params, _opts, s) do
+    # IO.inspect {:execute, query.name, query.statement, query.ref, s.connection_id}
+
     data = encode_com_stmt_execute(query.statement_id, params)
     :ok = :gen_tcp.send(s.sock, data)
     {:ok, data} = :gen_tcp.recv(s.sock, 0)
@@ -86,7 +78,7 @@ defmodule MyXQL.Protocol do
         {:ok, query, result, update_status(s, status_flags)}
 
       ok_packet(status_flags: status_flags, affected_rows: affected_rows, last_insert_id: last_insert_id) ->
-        result = %Result{columns: [], rows: [], num_rows: affected_rows, last_insert_id: last_insert_id}
+        result = %Result{columns: [], rows: nil, num_rows: affected_rows, last_insert_id: last_insert_id}
         {:ok, query, result, update_status(s, status_flags)}
 
       err_packet(error_message: error_message) ->
@@ -143,10 +135,11 @@ defmodule MyXQL.Protocol do
 
   ## Internals
 
-  defp handshake(sock, username, password, database) do
+  defp handshake(sock, username, password, database, skip_database?) do
     {:ok, data} = :gen_tcp.recv(sock, 0)
 
     handshake_v10(
+      conn_id: connection_id,
       auth_plugin_name: auth_plugin_name,
       auth_plugin_data1: auth_plugin_data1,
       auth_plugin_data2: auth_plugin_data2
@@ -160,13 +153,13 @@ defmodule MyXQL.Protocol do
     auth_plugin_data = <<auth_plugin_data1::binary, auth_plugin_data2::binary>>
     auth_response = if password, do: MyXQL.Utils.mysql_native_password(password, auth_plugin_data)
 
-    data = MyXQL.Messages.encode_handshake_response_41(username, auth_response, database)
+    data = MyXQL.Messages.encode_handshake_response_41(username, auth_response, database, skip_database?)
     :ok = :gen_tcp.send(sock, data)
     {:ok, data} = :gen_tcp.recv(sock, 0)
 
     case decode_response_packet(data) do
       ok_packet(warning_count: 0) ->
-        {:ok, %{sock: sock, transaction_status: :idle}}
+        {:ok, %__MODULE__{sock: sock, connection_id: connection_id, transaction_status: :idle}}
 
       err_packet(error_message: message) ->
         {:error, %MyXQL.Error{message: message}}

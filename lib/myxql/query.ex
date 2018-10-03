@@ -1,5 +1,5 @@
 defmodule MyXQL.Query do
-  defstruct [:statement, :statement_id, :type]
+  defstruct [:name, :statement, :statement_id, :ref]
 
   defimpl DBConnection.Query do
     def parse(query, _opts) do

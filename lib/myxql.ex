@@ -20,15 +20,13 @@ defmodule MyXQL do
     end
   end
 
-  # TODO: handle query names
-  def prepare(conn, _name, statement, opts \\ []) do
-    query = %MyXQL.Query{statement: statement}
+  def prepare(conn, name, statement, opts \\ []) do
+    query = %MyXQL.Query{name: name, statement: statement, ref: make_ref()}
     DBConnection.prepare(conn, query, opts)
   end
 
-  # TODO: handle query names
-  def prepare_execute(conn, _name, statement, params \\ [], opts \\ []) do
-    query = %MyXQL.Query{statement: statement}
+  def prepare_execute(conn, name, statement, params \\ [], opts \\ []) do
+    query = %MyXQL.Query{name: name, statement: statement, ref: make_ref()}
 
     case DBConnection.prepare_execute(conn, query, params, opts) do
       {:ok, query, result} ->

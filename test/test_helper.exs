@@ -35,7 +35,9 @@ CREATE TABLE test_types (
   my_datetime6 DATETIME(6),
   my_year YEAR,
   my_binary3 BINARY(3),
-  my_varbinary3 VARBINARY(3)
+  my_varbinary3 VARBINARY(3),
+  my_boolean BOOLEAN,
+  my_blob BLOB
 )
 """
 

@@ -60,19 +60,6 @@ defmodule MyXQL.TypesTest do
     #   assert_roundtrip(c, "my_double", 13.37)
     # end
 
-    test "MYSQL_TYPE_NEWDECIMAL - SQL DECIMAL", c do
-      assert_roundtrip(c, "my_decimal", Decimal.new(-13))
-      assert insert_and_get(c, "my_decimal", Decimal.new("-13.37")) == Decimal.new(-13)
-
-      assert_roundtrip(c, "my_decimal52", Decimal.new("-999.99"))
-      assert_roundtrip(c, "my_decimal52", Decimal.new("999.99"))
-    end
-
-    # test "MYSQL_TYPE_BIT", c do
-    #   assert_roundtrip(c, "my_bit2", <<1::2>>)
-    #   # assert_roundtrip(c, "my_bit8", 1)
-    # end
-
     test "MYSQL_TYPE_DATE", c do
       assert_roundtrip(c, "my_date", ~D[1999-12-31])
       assert_roundtrip(c, "my_date", ~D[1999-12-31])
@@ -112,12 +99,38 @@ defmodule MyXQL.TypesTest do
       assert_roundtrip(c, "my_year", 1999)
     end
 
+    # test "MYSQL_TYPE_BIT", c do
+    #   assert_roundtrip(c, "my_bit2", <<1::2>>)
+    #   # assert_roundtrip(c, "my_bit8", 1)
+    # end
+
+    test "MYSQL_TYPE_NEWDECIMAL - SQL DECIMAL", c do
+      assert_roundtrip(c, "my_decimal", Decimal.new(-13))
+      assert insert_and_get(c, "my_decimal", Decimal.new("-13.37")) == Decimal.new(-13)
+
+      assert_roundtrip(c, "my_decimal52", Decimal.new("-999.99"))
+      assert_roundtrip(c, "my_decimal52", Decimal.new("999.99"))
+    end
+
+    test "MYSQL_TYPE_BLOB", c do
+      assert_roundtrip(c, "my_blob", <<1, 2, 3>>)
+    end
+
     test "MYSQL_TYPE_VAR_STRING - SQL VARBINARY", c do
       assert_roundtrip(c, "my_varbinary3", <<1, 2, 3>>)
     end
 
     test "MYSQL_TYPE_STRING - SQL BINARY", c do
       assert_roundtrip(c, "my_binary3", <<1, 2, 3>>)
+    end
+
+    # test "MYSQL_TYPE_NULL", c do
+    #   assert insert_and_get(c, "my_tinyint", nil) == nil
+    # end
+
+    test "boolean", c do
+      assert insert_and_get(c, "my_boolean", true) == 1
+      assert insert_and_get(c, "my_boolean", false) == 0
     end
   end
 

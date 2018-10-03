@@ -134,13 +134,13 @@ defmodule MyXQL.Messages do
     end
 
     <<
-      conn_id::size(32),
+      conn_id::little-size(32),
       auth_plugin_data1::8-bytes,
       0,
-      capability_flags1::size(16),
+      capability_flags1::little-size(16),
       character_set::size(8),
-      status_flags::size(16),
-      capability_flags2::size(16),
+      status_flags::little-size(16),
+      capability_flags2::little-size(16),
       auth_plugin_data_length::size(8),
       0::size(80),
       rest::binary
@@ -175,8 +175,10 @@ defmodule MyXQL.Messages do
     :database
   ]
 
-  def encode_handshake_response_41(username, auth_response, database) do
-    capability_flags = @client_connect_with_db ||| @client_protocol_41 ||| @client_deprecate_eof
+  def encode_handshake_response_41(username, auth_response, database, skip_database?) do
+    capability_flags = @client_protocol_41 ||| @client_deprecate_eof
+    capability_flags = if skip_database?, do: capability_flags, else: capability_flags ||| @client_connect_with_db
+
     charset = 8
     username = <<username::binary, 0>>
     database = <<database::binary, 0>>
