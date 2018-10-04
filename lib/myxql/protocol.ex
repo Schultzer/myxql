@@ -102,6 +102,25 @@ defmodule MyXQL.Protocol do
 
       err_packet(error_message: message) ->
         {:error, %MyXQL.Error{message: message}}
+
+      # I couldn't find docs for it, but what I've found is:
+      auth_switch_request(plugin_name: "caching_sha2_password", plugin_data: auth_plugin_data) ->
+        auth_response = MyXQL.Utils.sha256_password(password, auth_plugin_data)
+        data = encode_auth_switch_response(auth_response)
+        :ok = :gen_tcp.send(sock, data)
+        {:ok, data} = :gen_tcp.recv(sock, 0)
+
+        case decode_packet(data) do
+          packet(payload: <<0x01, 0x03>>) ->
+            {:ok, data} = :gen_tcp.recv(sock, 0)
+            ok_packet() = decode_packet(data)
+            :ok
+
+          packet(payload: <<0x01, 0x04>>) ->
+            # message = "foo"
+            # {:error, %MyXQL.Error{message: message}}
+            :bad
+        end
     end
   end
 end

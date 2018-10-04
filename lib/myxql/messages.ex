@@ -33,7 +33,7 @@ defmodule MyXQL.Messages do
   # @client_multi_statements 0x00010000
   # @client_multi_results 0x00020000
   # @client_ps_multi_results 0x00040000
-  # @client_plugin_auth 0x00080000
+  @client_plugin_auth 0x00080000
   # @client_connect_attrs 0x00100000
   # @client_plugin_auth_lenenc_client_data 0x00200000
   # @client_can_handle_expired_passwords 0x00400000
@@ -77,6 +77,7 @@ defmodule MyXQL.Messages do
     case payload do
       <<0x00, _::binary>> -> decode_ok_packet(payload)
       <<0xFF, _::binary>> -> decode_err_packet(payload)
+      <<0xFE, _::binary>> -> decode_auth_switch_request(payload)
     end
   end
 
@@ -198,7 +199,10 @@ defmodule MyXQL.Messages do
   ]
 
   def encode_handshake_response_41(username, auth_response, database) do
-    capability_flags = @client_connect_with_db ||| @client_protocol_41 ||| @client_deprecate_eof
+    capability_flags =
+      @client_connect_with_db ||| @client_protocol_41 ||| @client_deprecate_eof |||
+        @client_plugin_auth
+
     charset = 8
     username = <<username::binary, 0>>
     database = <<database::binary, 0>>
@@ -207,7 +211,7 @@ defmodule MyXQL.Messages do
       if auth_response do
         <<byte_size(auth_response), auth_response::binary>>
       else
-        <<0, 0>>
+        <<0>>
       end
 
     payload = <<
@@ -217,11 +221,28 @@ defmodule MyXQL.Messages do
       String.duplicate(<<0>>, 23)::binary,
       username::binary,
       auth_response::binary,
-      database::binary
+      database::binary,
+      "mysql_native_password",
+      0
     >>
 
     sequence_id = 1
     encode_packet(payload, sequence_id)
+  end
+
+  # https://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Protocol::AuthSwitchRequest
+  defrecord :auth_switch_request, [:plugin_name, :plugin_data]
+
+  def decode_auth_switch_request(<<0xFE, rest::binary>>) do
+    [plugin_name, rest] = :binary.split(rest, <<0>>)
+    [plugin_data, ""] = :binary.split(rest, <<0>>)
+    auth_switch_request(plugin_name: plugin_name, plugin_data: plugin_data)
+  end
+
+  # https://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Protocol::AuthSwitchResponse
+  def encode_auth_switch_response(auth_plugin_data) do
+    sequence_id = 3
+    encode_packet(auth_plugin_data, sequence_id)
   end
 
   #################################################################

@@ -13,6 +13,17 @@ defmodule MyXQL.Utils do
     )
   end
 
+  # https://dev.mysql.com/doc/internals/en/sha256.html
+  def sha256_password(password, salt) do
+    stage1 = :crypto.hash(:sha256, password)
+    stage2 = :crypto.hash(:sha256, stage1)
+    :crypto.hash_init(:sha256)
+    |> :crypto.hash_update(stage2)
+    |> :crypto.hash_update(salt)
+    |> :crypto.hash_final
+    |> bxor_binary(stage1)
+  end
+
   defp bxor_binary(b1, b2) do
     for {e1, e2} <- List.zip([:erlang.binary_to_list(b1), :erlang.binary_to_list(b2)]) do
       e1 ^^^ e2

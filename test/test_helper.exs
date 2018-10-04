@@ -7,6 +7,7 @@ USE myxql_test;
 
 DROP USER IF EXISTS nopassword;
 CREATE USER nopassword;
+GRANT ALL PRIVILEGES ON myxql_test.* TO nopassword;
 
 DROP USER IF EXISTS sha2;
 CREATE USER sha2 IDENTIFIED WITH caching_sha2_password BY 'secret';
